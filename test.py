@@ -1,37 +1,39 @@
 import requests
 import json
 import os
+import sys
 
 # --- KONFIGURACJA ---
-# Jeśli w docker-compose masz "localhost", wpisz tu "localhost".
-# Jeśli masz "192.168.1.X", wpisz tu to IP.
-HOST = "localhost"
-
-# Adresy wynikające z Nginxa
-API_URL = f"http://{HOST}/api"  # Backend jest pod /api
-IMG_PATH = "test_image.jpg"
-
-
-def create_dummy_image():
-    # Tworzymy mały plik, żeby mieć co wysłać
-    with open(IMG_PATH, "wb") as f:
-        f.write(b'\xFF\xD8\xFF\xE0' * 1024)  # Udajemy JPG
-    print(f"📁 Utworzono plik testowy: {IMG_PATH}")
+HOST = "192.168.0.41"  # Twoje IP
+API_URL = f"http://{HOST}/api"
+IMG_PATH = "test_image.jpg"  # <-- Skrypt szuka pliku o tej nazwie w tym samym folderze
 
 
 def run_test():
-    print(f"🚀 ROZPOCZYNAM TEST NA ADRESIE: {HOST}\n")
-    create_dummy_image()
+    print(f"🚀 ROZPOCZYNAM TEST NA ADRESIE: {HOST}")
+    print(f"📂 Szukam pliku: {IMG_PATH}...")
+
+    # 0. Sprawdzenie czy plik istnieje (żeby nie wywaliło błędu później)
+    if not os.path.exists(IMG_PATH):
+        print(f"❌ BŁĄD: Nie znaleziono pliku '{IMG_PATH}'!")
+        print("   Wklej prawdziwe zdjęcie .jpg do tego folderu i nazwij je 'test_image.jpg'")
+        sys.exit(1)
+
+    print("   Plik znaleziony. Jedziemy z koksem.\n")
 
     # -------------------------------------------------
-    # KROK 1: Presign (Daj mi URL do uploadu)
+    # KROK 1: Presign (Daj mi link do uploadu)
     # -------------------------------------------------
     print("1️⃣  Wysyłam żądanie o URL (POST /photos/presign)...")
     try:
+        # Zakładamy, że to JPG, bo tak nazwaliśmy plik
         resp = requests.post(f"{API_URL}/photos/presign", json={"extension": "jpg"})
-        resp.raise_for_status()  # Rzuć błąd jak coś nie tak
+        resp.raise_for_status()
     except Exception as e:
         print(f"❌ Błąd połączenia z API: {e}")
+        # Częsty błąd: jeśli dostajesz 502, to znaczy że backend leży, sprawdź 'docker logs backend'
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   Treść błędu: {e.response.text}")
         return
 
     data = resp.json()
@@ -47,9 +49,9 @@ def run_test():
     print("\n2️⃣  Wysyłam plik (PUT)...")
 
     with open(IMG_PATH, "rb") as f:
-        # WAŻNE: Tu "telefon" uderza na URL wygenerowany przez backend
-        # Ten URL powinien wskazywać na Nginx (port 80)
-        upload_resp = requests.put(upload_url, data=f)
+        # requests.put automatycznie streamuje plik
+        headers = {'Content-Type': 'image/jpeg'}  # Dobra praktyka, żeby ustawić typ
+        upload_resp = requests.put(upload_url, data=f, headers=headers)
 
     if upload_resp.status_code == 200:
         print("✅ MinIO (przez Nginx) przyjęło plik!")
@@ -62,30 +64,35 @@ def run_test():
     # KROK 3: Confirm (Potwierdź w bazie)
     # -------------------------------------------------
     print("\n3️⃣  Potwierdzam zapis (POST /photos/confirm)...")
+
+    # Dane symulujące telefon. Wymiary wpisane "na sztywno",
+    # w prawdziwej apce Android pobierze je z bitmapy.
     confirm_data = {
         "photo_id": photo_id,
-        "width": 800,
-        "height": 600,
-        "device_model": "Python Script"
+        "width": 1920,
+        "height": 1080,
+        "extension": "jpg"
     }
 
     conf_resp = requests.post(f"{API_URL}/photos/confirm", json=confirm_data)
 
     if conf_resp.status_code == 200:
-        print("✅ Sukces! Metadane w bazie.")
+        print("✅ Sukces! Metadane zapisane w bazie.")
         print("📥 Odpowiedź serwera:", conf_resp.json())
     else:
         print(f"❌ Błąd potwierdzenia: {conf_resp.text}")
+        return
 
     # -------------------------------------------------
     # KROK 4: Weryfikacja (Lista zdjęć)
     # -------------------------------------------------
     print("\n4️⃣  Pobieram listę wszystkich zdjęć w bazie...")
-    list_resp = requests.get(f"{API_URL}/photos/list")
-    print(json.dumps(list_resp.json(), indent=2))
+    try:
+        list_resp = requests.get(f"{API_URL}/photos/list")
+        print(json.dumps(list_resp.json(), indent=2))
+    except Exception as e:
+        print(f"⚠️ Nie udało się pobrać listy (ale upload działał): {e}")
 
-    # Sprzątanie
-    os.remove(IMG_PATH)
     print("\n🏁 TEST ZAKOŃCZONY.")
 
 
