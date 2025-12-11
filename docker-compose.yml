@@ -16,9 +16,9 @@ services:
     image: postgres:16
     restart: always
     environment:
-      POSTGRES_USER: user
+      POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: photodb
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -27,7 +27,7 @@ services:
     restart: always
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_USER: ${MINIO_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
     ports:
       - "127.0.0.1:9001:9001"
@@ -41,11 +41,11 @@ services:
       - db
       - minio
     environment:
-      - DATABASE_URL=postgresql://user:${DB_PASSWORD}@db:5432/photodb
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       - S3_ENDPOINT=minio:9000
-      - S3_ACCESS_KEY=minioadmin
+      - S3_ACCESS_KEY=${MINIO_USER}
       - S3_SECRET_KEY=${MINIO_PASSWORD}
-      - S3_BUCKET=photos
+      - S3_BUCKET=${MINIO_BUCKET_NAME}
       - EXTERNAL_HOST=${SERVER_HOST}
       - EXTERNAL_PORT=${SERVER_PORT}
 

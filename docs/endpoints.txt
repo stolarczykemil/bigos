@@ -1,0 +1,17 @@
+DOKUMENTACJA API - PHOTO UPLOAD
+Adres serwera (Base URL): http://192.168.0.41/api/
+WAŻNE DLA ANDROIDA: Serwer działa po HTTP. Pamiętajcie o dodaniu android:usesCleartextTraffic="true" w pliku AndroidManifest.xml, inaczej apka nie połączy się z serwerem.
+
+KROK 1: POBRANIE LINKU (Presign) Aplikacja prosi o wygenerowanie linku do wysyłki.
+Metoda: POST Endpoint: photos/presign
+Co wysłać (JSON): { "extension": "jpg" }
+Co otrzymacie (Odpowiedź): { "photo_id": "550e8400-...", "upload_url": "http://192.168.0.41/photos/..." }
+Zapiszcie sobie photo_id oraz upload_url!
+
+KROK 2: FIZYCZNY UPLOAD PLIKU Wysłanie bajtów zdjęcia pod adres otrzymany w Kroku 1.
+Metoda: PUT Adres URL: Użyjcie pełnego linku z pola "upload_url" (z Kroku 1). Nagłówki (Headers): Content-Type: image/jpeg Body: Czysty plik (binary raw bytes). To NIE jest multipart/form-data.
+
+KROK 3: POTWIERDZENIE (Confirm) Informacja dla backendu, że plik został wysłany.
+Metoda: POST Endpoint: photos/confirm
+Co wysłać (JSON): { "photo_id": "550e8400-...", (ID z Kroku 1) "extension": "jpg", "width": 1920, "height": 1080 }
+Odpowiedź sukcesu: Status 200 OK
