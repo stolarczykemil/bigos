@@ -4,7 +4,7 @@ WAŻNE DLA ANDROIDA: Serwer działa po HTTP. Pamiętajcie o dodaniu android:uses
 
 KROK 1: POBRANIE LINKU (Presign) Aplikacja prosi o wygenerowanie linku do wysyłki.
 Metoda: POST Endpoint: photos/presign
-Co wysłać (JSON): { "extension": "jpg" }
+Co wysłać (JSON): { "extension": "jpg",  user_id: int }
 Co otrzymacie (Odpowiedź): { "photo_id": "550e8400-...", "upload_url": "http://192.168.0.41/photos/..." }
 Zapiszcie sobie photo_id oraz upload_url!
 
@@ -13,5 +13,5 @@ Metoda: PUT Adres URL: Użyjcie pełnego linku z pola "upload_url" (z Kroku 1). 
 
 KROK 3: POTWIERDZENIE (Confirm) Informacja dla backendu, że plik został wysłany.
 Metoda: POST Endpoint: photos/confirm
-Co wysłać (JSON): { "photo_id": "550e8400-...", (ID z Kroku 1) "extension": "jpg", "width": 1920, "height": 1080 }
+Co wysłać (JSON): { "photo_id": "550e8400-...", (ID z Kroku 1) "extension": "jpg", "width": 1920, "height": 1080, user_id: int }
 Odpowiedź sukcesu: Status 200 OK

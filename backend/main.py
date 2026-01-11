@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from minio import Minio
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.orm import sessionmaker, declarative_base, Session, ForeignKey, relationship
 
 # Getting environment variables
 def get_env_variable(var_name):
@@ -35,6 +35,16 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False)
+    password = Column(String(255), nullable=False)
+
+    photos = relationship("PhotoMetadata", back_populates="owner")
+
 # Metadata table
 class PhotoMetadata(Base):
     __tablename__ = "photos"
@@ -44,6 +54,9 @@ class PhotoMetadata(Base):
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner = relationship("User", back_populates="photos")
 
 # Creating table (probably temporary solution)
 try:
@@ -80,11 +93,13 @@ app = FastAPI(title="Photo Upload API", root_path="/api")
 
 class PresignRequest(BaseModel):
     extension: str = "jpg"
+    user_id: int
 
 class ConfirmUploadRequest(BaseModel):
     photo_id: str
     width: int
     height: int
+    user_id: int
     extension: str = "jpg"
 
 
@@ -114,7 +129,7 @@ def fix_minio_url(internal_url: str) -> str:
 def generate_presigned_url(req: PresignRequest):
     # Generating photo id
     photo_id = str(uuid.uuid4())
-    object_key = f"{photo_id}.{req.extension}"
+    object_key = f"user_{req.user_id}/{photo_id}.{req.extension}"
 
     # URL generation, example: http://minio:9000/photos/abc.jpg?token=...
     try:
@@ -139,9 +154,10 @@ def confirm_upload(data: ConfirmUploadRequest, db: Session = Depends(get_db)):
     try:
         new_photo = PhotoMetadata(
             id=data.photo_id,
-            object_key=f"{data.photo_id}.{data.extension}",
+            object_key=f"user_{data.user_id}/{data.photo_id}.{data.extension}",
             width=data.width,
             height=data.height,
+            user_id=data.user_id
         )
 
         db.add(new_photo)
