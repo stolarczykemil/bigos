@@ -2,16 +2,24 @@ import os
 import uuid
 from datetime import datetime, timedelta
 import sys
-from fastapi import FastAPI, HTTPException, Depends
+from typing import Optional
+
+# --- NOWE IMPORTY DO AUTH ---
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+# ----------------------------
+
 from pydantic import BaseModel
 from minio import Minio
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base, Session, ForeignKey, relationship
 
 # Getting environment variables
-def get_env_variable(var_name):
-    value = os.getenv(var_name)
-    if not value:
+def get_env_variable(var_name, default=None):
+    value = os.getenv(var_name, default)
+    if not value and default is None:
         print(f"No environmental variable: {var_name}")
         sys.exit(1)
     return value
@@ -29,19 +37,30 @@ S3_BUCKET = get_env_variable("S3_BUCKET")
 EXTERNAL_HOST = get_env_variable("EXTERNAL_HOST")
 EXTERNAL_PORT = get_env_variable("EXTERNAL_PORT")
 
+# --- ZMIENNE DO AUTH ---
+# Pamiętaj, żeby dodać SECRET_KEY do pliku .env!
+SECRET_KEY = get_env_variable("SECRET_KEY", "zmien_mnie_na_tajny_klucz_w_produkcji")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# -----------------------
 
 # Database configuration
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# --- KONFIGURACJA SECURITY (ARGON2) ---
+# To tutaj definiujemy, ze uzywamy Argon2
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# --------------------------------------
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False)
-    password = Column(String(255), nullable=False)
+    password = Column(String(255), nullable=False) # Tutaj bedzie hash
 
     photos = relationship("PhotoMetadata", back_populates="owner")
 
@@ -72,6 +91,35 @@ def get_db():
     finally:
         db.close()
 
+# --- FUNKCJE POMOCNICZE AUTH ---
+
+def verify_password(plain_password, hashed_password):
+    """Sprawdza hasło używając Argon2"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    """Generuje hash hasła używając Argon2"""
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict):
+    """Generuje token JWT"""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# FUNKCJA DLA WAS (ADMINÓW) - zgodnie z prośbą.
+# Nie jest podpięta pod żaden endpoint. Możesz jej użyć w konsoli Pythona albo w skrypcie,
+# żeby stworzyć sobie użytkownika z zahaszowanym hasłem.
+def create_user_internal(db: Session, username: str, password_plain: str):
+    hashed_password = get_password_hash(password_plain)
+    db_user = User(username=username, password=hashed_password)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+# -------------------------------
 
 # minIO configuration
 minio_client = Minio(
@@ -102,8 +150,32 @@ class ConfirmUploadRequest(BaseModel):
     user_id: int
     extension: str = "jpg"
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
 
 # Endpoints
+
+# --- ENDPOINT LOGOWANIA ---
+@app.post("/token", response_model=Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # 1. Pobierz usera z bazy
+    user = db.query(User).filter(User.username == form_data.username).first()
+    
+    # 2. Zweryfikuj hasło (Argon2)
+    if not user or not verify_password(form_data.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 3. Wygeneruj token
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+# --------------------------
+
 @app.get("/")
 def read_root():
     return {"message": "Photo API is running!"}
