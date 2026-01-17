@@ -13,8 +13,8 @@ from passlib.context import CryptContext
 
 from pydantic import BaseModel
 from minio import Minio
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base, Session, ForeignKey, relationship
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
 
 # Getting environment variables
 def get_env_variable(var_name, default=None):
@@ -42,6 +42,9 @@ EXTERNAL_PORT = get_env_variable("EXTERNAL_PORT")
 SECRET_KEY = get_env_variable("SECRET_KEY", "zmien_mnie_na_tajny_klucz_w_produkcji")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# Demo credentials (can be overridden via .env)
+DEMO_USERNAME = get_env_variable("DEMO_USERNAME", "testuser")
+DEMO_PASSWORD = get_env_variable("DEMO_PASSWORD", "testpass")
 # -----------------------
 
 # Database configuration
@@ -120,6 +123,23 @@ def create_user_internal(db: Session, username: str, password_plain: str):
     db.refresh(db_user)
     return db_user
 # -------------------------------
+
+def ensure_demo_user():
+    """
+    Tworzy u‘•ytkownika testowego, je‘>li nie istnieje.
+    U‘•ywa danych z DEMO_USERNAME / DEMO_PASSWORD (domyœlnie testuser / testpass).
+    """
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.username == DEMO_USERNAME).first()
+        if existing:
+            return
+        user = create_user_internal(db, DEMO_USERNAME, DEMO_PASSWORD)
+        print(f"Created demo user '{user.username}' (id={user.id}) for testing login/token.")
+    finally:
+        db.close()
+
+ensure_demo_user()
 
 # minIO configuration
 minio_client = Minio(
