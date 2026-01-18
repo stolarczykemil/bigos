@@ -161,13 +161,12 @@ app = FastAPI(title="Photo Upload API", root_path="/api")
 
 class PresignRequest(BaseModel):
     extension: str = "jpg"
-    user_id: int
+
 
 class ConfirmUploadRequest(BaseModel):
     photo_id: str
     width: int
     height: int
-    user_id: int
     extension: str = "jpg"
 
 class Token(BaseModel):
@@ -201,6 +200,11 @@ def read_root():
     return {"message": "Photo API is running!"}
 
 
+@app.get("/users/me")
+def read_users_me(current_user: User = Depends(get_current_user)):
+    return {"id": current_user.id, "username": current_user.username}
+
+
 # Additional function for URL creation
 # Needed because External host can't see minIO and needs to see nginx
 def fix_minio_url(internal_url: str) -> str:
@@ -218,10 +222,10 @@ def fix_minio_url(internal_url: str) -> str:
     return public_base_url + url_parts[1]
 
 @app.post("/photos/presign")
-def generate_presigned_url(req: PresignRequest):
+def generate_presigned_url(req: PresignRequest, current_user: User = Depends(get_current_user)):
     # Generating photo id
     photo_id = str(uuid.uuid4())
-    object_key = f"user_{req.user_id}/{photo_id}.{req.extension}"
+    object_key = f"user_{current_user.id}/{photo_id}.{req.extension}"
 
     # URL generation, example: http://minio:9000/photos/abc.jpg?token=...
     try:
@@ -242,14 +246,14 @@ def generate_presigned_url(req: PresignRequest):
     }
 
 @app.post("/photos/confirm")
-def confirm_upload(data: ConfirmUploadRequest, db: Session = Depends(get_db)):
+def confirm_upload(data: ConfirmUploadRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         new_photo = PhotoMetadata(
             id=data.photo_id,
-            object_key=f"user_{data.user_id}/{data.photo_id}.{data.extension}",
+            object_key=f"user_{current_user.id}/{data.photo_id}.{data.extension}",
             width=data.width,
             height=data.height,
-            user_id=data.user_id
+            user_id=current_user.id
         )
 
         db.add(new_photo)
