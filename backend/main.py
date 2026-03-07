@@ -63,9 +63,10 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False)
-    password = Column(String(255), nullable=False) # Tutaj bedzie hash
+    password = Column(String(255), nullable=False)
 
-    photos = relationship("PhotoMetadata", back_populates="owner")
+    meals = relationship("Meal", back_populates="owner")
+    labels = relationship("Label", back_populates="owner")
 
 # Metadata table
 class PhotoMetadata(Base):
@@ -77,8 +78,36 @@ class PhotoMetadata(Base):
     height = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class Meal(Base):
+    __tablename__ = "meals"
+
+    id = Column(String(36), primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    owner = relationship("User", back_populates="photos")
+    owner = relationship("User", back_populates="meals")
+
+    front_photo_id = Column(String(36), ForeignKey("photos.id"), nullable=False)
+    left_photo_id = Column(String(36), ForeignKey("photos.id"), nullable=False)
+    right_photo_id = Column(String(36), ForeignKey("photos.id"), nullable=False)
+
+    front_photo = relationship("PhotoMetadata", foreign_keys=[front_photo_id])
+    left_photo = relationship("PhotoMetadata", foreign_keys=[left_photo_id])
+    right_photo = relationship("PhotoMetadata", foreign_keys=[right_photo_id])
+
+
+class Label(Base):
+    __tablename__ = "labels"
+
+    id = Column(String(36), primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner = relationship("User", back_populates="labels")
+
+    photo_id = Column(String(36), ForeignKey("photos.id"), nullable=False)
+    photo = relationship("PhotoMetadata", foreign_keys=[photo_id])
 
 # Creating table (probably temporary solution)
 try:
@@ -181,18 +210,25 @@ app = FastAPI(title="Photo Upload API", root_path="/api")
 
 class PresignRequest(BaseModel):
     extension: str = "jpg"
+    folder: str
 
-
-class ConfirmUploadRequest(BaseModel):
+class UploadedPhotoInfo(BaseModel):
     photo_id: str
     width: int
     height: int
     extension: str = "jpg"
 
+class CreateMealRequest(BaseModel):
+    front: UploadedPhotoInfo
+    left: UploadedPhotoInfo
+    right: UploadedPhotoInfo
+
+class CreateLabelRequest(BaseModel):
+    photo: UploadedPhotoInfo
+
 class Token(BaseModel):
     access_token: str
     token_type: str
-
 
 # Endpoints
 
@@ -241,54 +277,93 @@ def fix_minio_url(internal_url: str) -> str:
     # correct URL for nginx
     return public_base_url + url_parts[1]
 
+
+# ==========================================
+# 1. UNIWERSALNY PRESIGN
+# ==========================================
 @app.post("/photos/presign")
 def generate_presigned_url(req: PresignRequest, current_user: User = Depends(get_current_user)):
-    # Generating photo id
     photo_id = str(uuid.uuid4())
-    object_key = f"user_{current_user.id}/{photo_id}.{req.extension}"
+    # Używamy wybranego folderu z frontendu (np. 'meals' lub 'labels')
+    object_key = f"{req.folder}/user_{current_user.id}/{photo_id}.{req.extension}"
 
-    # URL generation, example: http://minio:9000/photos/abc.jpg?token=...
     try:
-        internal_url = minio_client.presigned_put_object(
-            S3_BUCKET,
-            object_key,
-            expires=timedelta(minutes=5)
-        )
+        internal_url = minio_client.presigned_put_object(S3_BUCKET, object_key, expires=timedelta(minutes=5))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"MinIO Error: {str(e)}")
-
-    final_upload_url = fix_minio_url(internal_url)
 
     return {
         "photo_id": photo_id,
         "object_key": object_key,
-        "upload_url": final_upload_url
+        "upload_url": fix_minio_url(internal_url)
     }
 
-@app.post("/photos/confirm")
-def confirm_upload(data: ConfirmUploadRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+
+# ==========================================
+# 2. DODAWANIE POSIŁKU
+# ==========================================
+@app.post("/meals")
+def create_meal(data: CreateMealRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        new_photo = PhotoMetadata(
-            id=data.photo_id,
-            object_key=f"user_{current_user.id}/{data.photo_id}.{data.extension}",
-            width=data.width,
-            height=data.height,
-            user_id=current_user.id
+        # Najpierw tworzymy 3 rekordy PhotoMetadata
+        photos_to_insert = []
+        for photo_data in [data.front, data.left, data.right]:
+            photo = PhotoMetadata(
+                id=photo_data.photo_id,
+                object_key=f"meals/user_{current_user.id}/{photo_data.photo_id}.{photo_data.extension}",
+                width=photo_data.width,
+                height=photo_data.height
+            )
+            photos_to_insert.append(photo)
+            db.add(photo)
+
+        # Następnie tworzymy Posiłek
+        new_meal = Meal(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            front_photo_id=data.front.photo_id,
+            left_photo_id=data.left.photo_id,
+            right_photo_id=data.right.photo_id
         )
+        db.add(new_meal)
 
-        db.add(new_photo)
         db.commit()
-        db.refresh(new_photo)
-
-        return {
-            "status": "success",
-            "saved_id": new_photo.id,
-            "created_at": new_photo.created_at
-        }
+        return {"status": "success", "meal_id": new_meal.id}
 
     except Exception as e:
-        db.rollback() # If something went wrong discard changes
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
+
+
+# ==========================================
+# 3. DODAWANIE ETYKIETY
+# ==========================================
+@app.post("/labels")
+def create_label(data: CreateLabelRequest, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
+    try:
+        photo = PhotoMetadata(
+            id=data.photo.photo_id,
+            object_key=f"labels/user_{current_user.id}/{data.photo.photo_id}.{data.photo.extension}",
+            width=data.photo.width,
+            height=data.photo.height
+        )
+        db.add(photo)
+
+        new_label = Label(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            photo_id=data.photo.photo_id
+        )
+        db.add(new_label)
+
+        db.commit()
+        return {"status": "success", "label_id": new_label.id}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database Error: {str(e)}")
+
 
 @app.get("/photos/list")
 def list_photos(db: Session = Depends(get_db)):
