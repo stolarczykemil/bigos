@@ -1,17 +1,59 @@
-DOKUMENTACJA API - PHOTO UPLOAD
+Treść wiadomości Gemini
+DOKUMENTACJA API - WYSYŁANIE ZDJĘĆ (POSIŁKI I ETYKIETY)
+
 Adres serwera (Base URL): http://192.168.0.41/api/
+
 WAŻNE DLA ANDROIDA: Serwer działa po HTTP. Pamiętajcie o dodaniu android:usesCleartextTraffic="true" w pliku AndroidManifest.xml, inaczej apka nie połączy się z serwerem.
 
-KROK 1: POBRANIE LINKU (Presign) Aplikacja prosi o wygenerowanie linku do wysyłki.
-Metoda: POST Endpoint: photos/presign
-Co wysłać (JSON): { "extension": "jpg",  user_id: int }
-Co otrzymacie (Odpowiedź): { "photo_id": "550e8400-...", "upload_url": "http://192.168.0.41/photos/..." }
+WAŻNE (AUTORYZACJA): Wszystkie poniższe endpointy wymagają wysłania w nagłówku tokenu JWT zalogowanego użytkownika!
+Nagłówek: Authorization: Bearer <wasz_token>
+(Nie wysyłamy już user_id w JSON-ie, backend sam wie, kto to jest na podstawie tokenu).
+
+KROK 1: POBRANIE LINKU (Presign)
+Aplikacja prosi o wygenerowanie linku do wysyłki. Dla posiłków musicie wykonać ten krok 3 razy (dla przodu, lewej i prawej strony).
+
+Metoda: POST
+Endpoint: photos/presign
+Co wysłać (JSON):
+{
+"extension": "jpg",
+"folder": "meals" // Zmieńcie na "labels", jeśli to zdjęcie etykiety
+}
+
+Co otrzymacie (Odpowiedź):
+{
+"photo_id": "550e8400-...",
+"object_key": "meals/user_1/550e8400-....jpg",
+"upload_url": "http://192.168.0.41/..."
+}
+
 Zapiszcie sobie photo_id oraz upload_url!
 
-KROK 2: FIZYCZNY UPLOAD PLIKU Wysłanie bajtów zdjęcia pod adres otrzymany w Kroku 1.
-Metoda: PUT Adres URL: Użyjcie pełnego linku z pola "upload_url" (z Kroku 1). Nagłówki (Headers): Content-Type: image/jpeg Body: Czysty plik (binary raw bytes). To NIE jest multipart/form-data.
+KROK 2: FIZYCZNY UPLOAD PLIKU
+Wysłanie bajtów zdjęcia pod adres otrzymany w Kroku 1.
 
-KROK 3: POTWIERDZENIE (Confirm) Informacja dla backendu, że plik został wysłany.
-Metoda: POST Endpoint: photos/confirm
-Co wysłać (JSON): { "photo_id": "550e8400-...", (ID z Kroku 1) "extension": "jpg", "width": 1920, "height": 1080, user_id: int }
-Odpowiedź sukcesu: Status 200 OK
+Metoda: PUT
+Adres URL: Użyjcie pełnego linku z pola "upload_url" (z Kroku 1).
+Nagłówki (Headers): Content-Type: image/jpeg
+Body: Czysty plik (binary raw bytes). To NIE jest multipart/form-data.
+
+KROK 3: POTWIERDZENIE (Zapisanie w bazie)
+Informacja dla backendu, że pliki zostały wysłane. Wybierzcie odpowiedni endpoint w zależności od tego, co wysyłacie.
+
+OPCJA A: Zapis posiłku (Wymaga 3 zdjęć)
+Metoda: POST
+Endpoint: meals
+Co wysłać (JSON):
+{
+"front": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" },
+"left": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" },
+"right": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" }
+}
+S
+OPCJA B: Zapis etykiety (Wymaga 1 zdjęcia)
+Metoda: POST
+Endpoint: labels
+Co wysłać (JSON):
+{
+"photo": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" }
+}
