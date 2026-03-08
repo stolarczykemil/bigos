@@ -77,6 +77,7 @@ class PhotoMetadata(Base):
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
 
 class Meal(Base):
@@ -312,7 +313,8 @@ def create_meal(data: CreateMealRequest, db: Session = Depends(get_db), current_
                 id=photo_data.photo_id,
                 object_key=f"meals/user_{current_user.id}/{photo_data.photo_id}.{photo_data.extension}",
                 width=photo_data.width,
-                height=photo_data.height
+                height=photo_data.height,
+                user_id=current_user.id
             )
             photos_to_insert.append(photo)
             db.add(photo)
@@ -346,7 +348,8 @@ def create_label(data: CreateLabelRequest, db: Session = Depends(get_db),
             id=data.photo.photo_id,
             object_key=f"labels/user_{current_user.id}/{data.photo.photo_id}.{data.photo.extension}",
             width=data.photo.width,
-            height=data.photo.height
+            height=data.photo.height,
+            user_id=current_user.id  
         )
         db.add(photo)
 
