@@ -7,3 +7,6 @@ pydantic
 python-multipart
 passlib[argon2]
 python-jose[cryptography]
+Pillow
+torch
+transformers

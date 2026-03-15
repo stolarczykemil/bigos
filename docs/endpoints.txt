@@ -49,7 +49,12 @@ Co wysłać (JSON):
 "left": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" },
 "right": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" }
 }
-S
+
+Nowość: odpowiedź z endpointu meals zwraca dodatkowo pole:
+"classification_status": "pending"
+
+To oznacza, że backend rozpoczął klasyfikację zdjęć jedzenia w tle.
+
 OPCJA B: Zapis etykiety (Wymaga 1 zdjęcia)
 Metoda: POST
 Endpoint: labels
@@ -57,3 +62,52 @@ Co wysłać (JSON):
 {
 "photo": { "photo_id": "<id-z-kroku-1>", "width": 1920, "height": 1080, "extension": "jpg" }
 }
+
+Nowość: odpowiedź z endpointu labels zwraca dodatkowo pole:
+"classification_status": "not_applicable"
+
+Dla etykiet klasyfikacja jedzenia nie jest wykonywana.
+
+NOWY ENDPOINT: POBRANIE WYNIKU KLASYFIKACJI
+Metoda: GET
+Endpoint: photos/{photo_id}/classification
+
+Do czego służy:
+Pobiera wynik klasyfikacji dla konkretnego zdjęcia.
+
+Przykładowa odpowiedź dla zdjęcia jedzenia:
+{
+  "photo_id": "550e8400-...",
+  "image_type": "food",
+  "classification_status": "completed",
+  "predicted_class": "pizza",
+  "confidence": 0.93,
+  "top_predictions": [
+    {"label": "pizza", "confidence": 0.93},
+    {"label": "flatbread", "confidence": 0.04},
+    {"label": "lasagna", "confidence": 0.02}
+  ],
+  "model": "ashaduzzaman/vit-finetuned-food101",
+  "classified_at": "2026-03-15T12:34:56Z",
+  "error_message": null
+}
+
+Przykładowa odpowiedź dla zdjęcia etykiety:
+{
+  "photo_id": "550e8400-...",
+  "image_type": "label",
+  "classification_status": "not_applicable",
+  "predicted_class": null,
+  "confidence": null,
+  "top_predictions": [],
+  "model": null,
+  "classified_at": null,
+  "error_message": null
+}
+
+Możliwe wartości classification_status:
+- pending
+- completed
+- classification_failed
+- not_applicable
+- disabled
