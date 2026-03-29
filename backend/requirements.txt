@@ -10,3 +10,5 @@ python-jose[cryptography]
 Pillow
 torch
 transformers
+paddlepaddle
+paddleocr

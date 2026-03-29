@@ -28,6 +28,8 @@ from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 from services.food_classifier import FoodClassifierService
 
+from services.label_reader import LabelReaderService
+
 logger = logging.getLogger(__name__)
 
 IMAGE_TYPE_FOOD = "food"
@@ -90,6 +92,8 @@ FOOD_CLASSIFIER_MODEL = get_env_variable(
     "ashaduzzaman/vit-finetuned-food101",
 )
 FOOD_CLASSIFIER_TOP_K = get_int_env_variable("FOOD_CLASSIFIER_TOP_K", 5)
+
+label_reader = LabelReaderService(enabled=True)
 
 engine_kwargs = {}
 if DATABASE_URL.startswith("sqlite"):
