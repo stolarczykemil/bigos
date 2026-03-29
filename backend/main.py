@@ -708,7 +708,7 @@ def create_label(
             width=data.photo.width,
             height=data.photo.height,
             image_type=IMAGE_TYPE_LABEL,
-            classification_status=CLASSIFICATION_NOT_APPLICABLE,
+            classification_status=CLASSIFICATION_PENDING,
         )
         db.add(photo)
 
@@ -726,7 +726,7 @@ def create_label(
         return {
             "status": "success",
             "label_id": new_label.id,
-            "classification_status": CLASSIFICATION_NOT_APPLICABLE,
+            "classification_status": CLASSIFICATION_PENDING
         }
     except Exception as exc:
         db.rollback()
