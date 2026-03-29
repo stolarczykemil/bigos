@@ -141,6 +141,7 @@ class PhotoMetadata(Base):
     classification_error = Column(Text, nullable=True)
     classified_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    extracted_text_json = Column(Text, nullable=True)
 
 
 class Meal(Base):
@@ -191,6 +192,7 @@ def ensure_runtime_schema() -> None:
         "classifier_model_name": "VARCHAR(255)",
         "classification_error": "TEXT",
         "classified_at": "TIMESTAMP",
+        "extracted_text_json": "TEXT",
     }
 
     with engine.begin() as connection:
@@ -476,6 +478,37 @@ def classify_food_photo(photo_id: str) -> None:
     if error_message:
         persist_classification_failure(photo_id, error_message)
 
+def read_label_photo(photo_id: str) -> None:
+    db = SessionLocal()
+    error_message: Optional[str] = None
+
+    try:
+        photo = db.query(PhotoMetadata).filter(PhotoMetadata.id == photo_id).first()
+        if photo is None:
+            logger.warning("Skipping OCR for missing photo %s.", photo_id)
+            return
+
+        photo.classification_status = CLASSIFICATION_PENDING
+        photo.classification_error = None
+        db.commit()
+
+        image_bytes = download_photo_bytes(photo.object_key)
+        
+        extracted_lines = label_reader.read_text_from_bytes(image_bytes)
+
+        photo.extracted_text_json = json.dumps(extracted_lines)
+        photo.classification_status = CLASSIFICATION_COMPLETED
+        photo.classified_at = datetime.utcnow()
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("OCR failed for photo %s.", photo_id)
+        error_message = str(exc)
+    finally:
+        db.close()
+
+    if error_message:
+        persist_classification_failure(photo_id, error_message)
 
 class PresignRequest(BaseModel):
     extension: str = "jpg"
@@ -519,11 +552,19 @@ class PhotoClassificationResponse(BaseModel):
     model: Optional[str] = None
     classified_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    extracted_text: Optional[list[str]] = Field(default_factory=list)
 
 
 def build_photo_classification_response(photo: PhotoMetadata) -> PhotoClassificationResponse:
     image_type = infer_photo_image_type(photo)
     classification_status = photo.classification_status or get_default_classification_status(image_type)
+
+    extracted_text_list = []
+    if photo.extracted_text_json:
+        try:
+            extracted_text_list = json.loads(photo.extracted_text_json)
+        except Exception:
+            logger.warning("Could not decode stored extracted text JSON.")
 
     return PhotoClassificationResponse(
         photo_id=photo.id,
@@ -536,7 +577,9 @@ def build_photo_classification_response(photo: PhotoMetadata) -> PhotoClassifica
         or (FOOD_CLASSIFIER_MODEL if image_type == IMAGE_TYPE_FOOD else None),
         classified_at=photo.classified_at,
         error_message=photo.classification_error,
+        extracted_text=extracted_text_list,
     )
+
 
 
 app = FastAPI(title="Photo Upload API", root_path="/api")
@@ -654,6 +697,7 @@ def create_meal(
 @app.post("/labels")
 def create_label(
     data: CreateLabelRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -676,6 +720,9 @@ def create_label(
         db.add(new_label)
 
         db.commit()
+
+        background_tasks.add_task(read_label_photo, photo.id)
+
         return {
             "status": "success",
             "label_id": new_label.id,
