@@ -9,6 +9,7 @@ passlib[argon2]
 python-jose[cryptography]
 Pillow
 torch
+torchvision
 transformers
 paddlepaddle
 paddleocr
