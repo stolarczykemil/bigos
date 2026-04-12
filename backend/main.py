@@ -415,9 +415,7 @@ def persist_classification_failure(photo_id: str, error_message: str) -> None:
             return
 
         photo.image_type = infer_photo_image_type(photo)
-        photo.classification_status = (
-            CLASSIFICATION_FAILED if photo.image_type == IMAGE_TYPE_FOOD else CLASSIFICATION_NOT_APPLICABLE
-        )
+        photo.classification_status = CLASSIFICATION_FAILED
         photo.predicted_food_class = None
         photo.classification_confidence = None
         photo.top_predictions_json = None

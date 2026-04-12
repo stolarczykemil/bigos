@@ -21,7 +21,7 @@ class LabelReaderService:
             raise LabelReaderError("Label reader is disabled.")
         if self._ocr_engine is None:
             try:
-                self._ocr_engine = PaddleOCR(use_angle_cls=True, lang='pl', show_log=False)
+                self._ocr_engine = PaddleOCR(use_angle_cls=True, lang='pl', enable_mkldnn=False)
             except Exception as exc:
                 raise LabelReaderError("Could not load PaddleOCR model.") from exc
 
@@ -37,7 +37,7 @@ class LabelReaderService:
             raise LabelReaderError("Could not decode image for OCR.") from exc
 
         try:
-            result = self._ocr_engine.ocr(img_array, cls=True)
+            result = self._ocr_engine.ocr(img_array)
         except Exception as exc:
             raise LabelReaderError("OCR processing failed.") from exc
 
