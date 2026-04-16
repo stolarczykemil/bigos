@@ -21,7 +21,7 @@ class LabelReaderService:
             raise LabelReaderError("Label reader is disabled.")
         if self._ocr_engine is None:
             try:
-                self._ocr_engine = PaddleOCR(use_angle_cls=True, lang='pl', enable_mkldnn=False)
+                self._ocr_engine = PaddleOCR(use_angle_cls=False, lang='pl', enable_mkldnn=False)
             except Exception as exc:
                 raise LabelReaderError("Could not load PaddleOCR model.") from exc
 
