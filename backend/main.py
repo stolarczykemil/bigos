@@ -93,7 +93,7 @@ FOOD_CLASSIFIER_MODEL = get_env_variable(
 )
 FOOD_CLASSIFIER_TOP_K = get_int_env_variable("FOOD_CLASSIFIER_TOP_K", 5)
 
-label_reader = LabelReaderService(enabled=True)
+label_reader = LabelReaderService(enabled=False)
 
 engine_kwargs = {}
 if DATABASE_URL.startswith("sqlite"):
